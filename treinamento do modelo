@@ -1,0 +1,191 @@
+# Importação das Bibliotecas
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Bibliotecas de Pré-processamento e Modelagem
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, accuracy_score, confusion_matrix, roc_auc_score, roc_curve
+
+import joblib
+
+# Configuração de Estilo para os Gráficos
+sns.set(style='whitegrid')
+plt.rcParams['figure.figsize'] = (12, 8)
+
+# Carregamento dos Dados
+dados = pd.read_csv('heart_2020_cleaned.csv')
+
+# Verificação de Valores Faltantes
+print("Valores faltantes por coluna:")
+print(dados.isnull().sum())
+
+# Definição das Colunas Numéricas e Categóricas
+colunas_numericas = ['BMI', 'PhysicalHealth', 'MentalHealth', 'SleepTime']
+colunas_categoricas = [
+    'Smoking', 'AlcoholDrinking', 'Stroke', 'DiffWalking', 'Sex', 
+    'AgeCategory', 'PhysicalActivity', 'GenHealth', 'Asthma', 
+    'KidneyDisease', 'Race', 'Diabetic', 'HeartDisease'
+]
+
+# Definição da Variável Alvo
+alvo = 'SkinCancer'
+
+# Verificar se a coluna alvo existe no DataFrame
+if alvo not in dados.columns:
+    print(f"\nErro: A coluna alvo '{alvo}' não foi encontrada no DataFrame.")
+    print("Verifique o nome da coluna alvo e tente novamente.")
+    exit()
+
+# Separação das Características (X) e Alvo (y)
+X = dados.drop(alvo, axis=1)
+y = dados[alvo]
+
+# Codificar a variável alvo
+le_alvo = LabelEncoder()
+y = le_alvo.fit_transform(y)
+
+# Divisão dos Dados em Conjuntos de Treino e Teste
+X_treino, X_teste, y_treino, y_teste = train_test_split(
+    X, y, 
+    test_size=0.2, 
+    random_state=42,
+    stratify=y  # Mantém a proporção das classes
+)
+
+# Definição do Pré-processamento com ColumnTransformer e Pipelines
+# Pipeline para as colunas numéricas
+transformacao_numerica = Pipeline(steps=[
+    ('imputacao', SimpleImputer(strategy='mean')),
+    ('escalonamento', StandardScaler())
+])
+
+# Pipeline para as colunas categóricas
+transformacao_categorica = Pipeline(steps=[
+    ('imputacao', SimpleImputer(strategy='most_frequent')),
+    ('codificacao', OneHotEncoder(handle_unknown='ignore'))
+])
+
+# Combinação das transformações
+pre_processamento = ColumnTransformer(transformers=[
+    ('num', transformacao_numerica, colunas_numericas),
+    ('cat', transformacao_categorica, colunas_categoricas)
+])
+
+# Criação do Pipeline completo com o modelo
+pipeline = Pipeline(steps=[
+    ('pre_processamento', pre_processamento),
+    ('classificador', RandomForestClassifier(
+        n_estimators=100, 
+        random_state=42,
+        class_weight='balanced'  # Ajuste de pesos das classes
+    ))
+])
+
+# Treinamento do Modelo usando o Pipeline
+pipeline.fit(X_treino, y_treino)
+
+# Avaliação do Modelo
+# Previsões no Conjunto de Teste
+y_pred = pipeline.predict(X_teste)
+y_prob = pipeline.predict_proba(X_teste)[:,1]  # Probabilidades para a Curva ROC
+
+# Métricas de Avaliação
+acuracia = accuracy_score(y_teste, y_pred)
+print(f"\nAcurácia: {acuracia:.2f}")
+
+print("\nRelatório de Classificação:")
+print(classification_report(y_teste, y_pred, target_names=le_alvo.classes_))
+
+# Matriz de Confusão
+matriz_confusao = confusion_matrix(y_teste, y_pred)
+plt.figure(figsize=(8,6))
+sns.heatmap(
+    matriz_confusao, 
+    annot=True, 
+    fmt='d', 
+    cmap='Blues', 
+    xticklabels=le_alvo.classes_, 
+    yticklabels=le_alvo.classes_
+)
+plt.xlabel('Previsões')
+plt.ylabel('Valores Reais')
+plt.title('Matriz de Confusão - Random Forest')
+plt.show()
+
+# Curva ROC e AUC
+auc = roc_auc_score(y_teste, y_prob)
+fpr, tpr, thresholds = roc_curve(y_teste, y_prob)
+
+plt.figure(figsize=(8,6))
+plt.plot(fpr, tpr, label=f'Random Forest (AUC = {auc:.2f})')
+plt.plot([0, 1], [0, 1], 'k--')  # Linha de referência
+plt.xlabel('Taxa de Falsos Positivos')
+plt.ylabel('Taxa de Verdadeiros Positivos')
+plt.title('Curva ROC - Random Forest')
+plt.legend(loc='lower right')
+plt.show()
+
+# Importância das Variáveis
+# Obter os nomes das características após a transformação
+nomes_caracteristicas_num = colunas_numericas
+nomes_caracteristicas_cat = pipeline.named_steps['pre_processamento'].named_transformers_['cat']['codificacao'].get_feature_names_out(colunas_categoricas)
+nomes_caracteristicas = np.concatenate([nomes_caracteristicas_num, nomes_caracteristicas_cat])
+
+importancias = pipeline.named_steps['classificador'].feature_importances_
+importancia_variaveis = pd.Series(importancias, index=nomes_caracteristicas).sort_values(ascending=False)
+
+# Plotar as importâncias
+plt.figure(figsize=(12, 8))
+sns.barplot(x=importancia_variaveis[:10], y=importancia_variaveis.index[:10])
+plt.title('Importância das Variáveis - Top 10')
+plt.xlabel('Importância')
+plt.ylabel('Características')
+plt.show()
+
+# Salvando o Pipeline Completo e o LabelEncoder da Variável Alvo
+joblib.dump(pipeline, 'pipeline_modelo_cancer_pele.pkl')
+joblib.dump(le_alvo, 'label_encoder_alvo.pkl')
+print("\nPipeline salvo como 'pipeline_modelo_cancer_pele.pkl'.")
+print("LabelEncoder salvo como 'label_encoder_alvo.pkl'.")
+
+# Exemplo de Uso do Pipeline para Previsão com Novos Dados
+# Supondo que você tenha um dicionário com os dados de entrada
+dados_entrada = {
+    'BMI': [28.0],
+    'PhysicalHealth': [3.0],
+    'MentalHealth': [2.0],
+    'SleepTime': [7.0],
+    'Smoking': ['Yes'],
+    'AlcoholDrinking': ['No'],
+    'Stroke': ['No'],
+    'DiffWalking': ['No'],
+    'Sex': ['Female'],
+    'AgeCategory': ['55-59'],
+    'PhysicalActivity': ['Yes'],
+    'GenHealth': ['Good'],
+    'Asthma': ['No'],
+    'KidneyDisease': ['No'],
+    'Race': ['White'],
+    'Diabetic': ['No'],
+    'HeartDisease': ['No']
+}
+
+# Converter para DataFrame
+df_entrada = pd.DataFrame(dados_entrada)
+
+# Fazer a previsão
+previsao = pipeline.predict(df_entrada)
+probabilidade = pipeline.predict_proba(df_entrada)[:,1]
+
+# Converter a previsão para a etiqueta original
+previsao_label = le_alvo.inverse_transform(previsao)
+
+print(f"\nPrevisão: {previsao_label[0]}")
+print(f"Probabilidade de ter Câncer de Pele ('Yes'): {probabilidade[0]*100:.2f}%")
