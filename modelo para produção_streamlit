@@ -1,0 +1,67 @@
+# app.py
+import streamlit as st
+import pandas as pd
+import joblib
+
+# Carregar o pipeline e o LabelEncoder
+pipeline = joblib.load('pipeline_modelo_cancer_pele.pkl')
+le_alvo = joblib.load('label_encoder_alvo.pkl')
+
+st.title("Previsão de Câncer de Pele")
+
+# Entrada dos dados pelo usuário
+BMI = st.number_input("BMI", min_value=10.0, max_value=50.0, value=25.0)
+PhysicalHealth = st.number_input("Dias de Saúde Física Ruim nos últimos 30 dias", min_value=0, max_value=30, value=0)
+MentalHealth = st.number_input("Dias de Saúde Mental Ruim nos últimos 30 dias", min_value=0, max_value=30, value=0)
+SleepTime = st.number_input("Horas de Sono por Dia", min_value=0, max_value=24, value=7)
+
+Smoking = st.selectbox("Fumante", ['Yes', 'No'])
+AlcoholDrinking = st.selectbox("Consumo Excessivo de Álcool", ['Yes', 'No'])
+Stroke = st.selectbox("Histórico de AVC", ['Yes', 'No'])
+DiffWalking = st.selectbox("Dificuldade para Caminhar", ['Yes', 'No'])
+Sex = st.selectbox("Sexo", ['Male', 'Female'])
+AgeCategory = st.selectbox("Faixa Etária", [
+    '18-24', '25-29', '30-34', '35-39', '40-44', '45-49',
+    '50-54', '55-59', '60-64', '65-69', '70-74', '75-79', '80 or older'
+])
+PhysicalActivity = st.selectbox("Atividade Física nos últimos 30 dias", ['Yes', 'No'])
+GenHealth = st.selectbox("Saúde Geral", ['Poor', 'Fair', 'Good', 'Very good', 'Excellent'])
+Asthma = st.selectbox("Asma", ['Yes', 'No'])
+KidneyDisease = st.selectbox("Doença Renal", ['Yes', 'No'])
+Race = st.selectbox("Raça", ['White', 'Black', 'Asian', 'American Indian/Alaskan Native', 'Other', 'Hispanic'])
+Diabetic = st.selectbox("Diabetes", ['Yes', 'No', 'No, borderline diabetes', 'Yes (during pregnancy)'])
+HeartDisease = st.selectbox("Doença Cardíaca", ['Yes', 'No'])
+
+# Botão para fazer a previsão
+if st.button("Prever"):
+    # Organizar os dados em um DataFrame
+    dados_entrada = pd.DataFrame({
+        'BMI': [BMI],
+        'PhysicalHealth': [PhysicalHealth],
+        'MentalHealth': [MentalHealth],
+        'SleepTime': [SleepTime],
+        'Smoking': [Smoking],
+        'AlcoholDrinking': [AlcoholDrinking],
+        'Stroke': [Stroke],
+        'DiffWalking': [DiffWalking],
+        'Sex': [Sex],
+        'AgeCategory': [AgeCategory],
+        'PhysicalActivity': [PhysicalActivity],
+        'GenHealth': [GenHealth],
+        'Asthma': [Asthma],
+        'KidneyDisease': [KidneyDisease],
+        'Race': [Race],
+        'Diabetic': [Diabetic],
+        'HeartDisease': [HeartDisease]
+    })
+
+    # Fazer a previsão
+    previsao = pipeline.predict(dados_entrada)
+    probabilidade = pipeline.predict_proba(dados_entrada)[:,1]
+
+    # Converter a previsão para a etiqueta original
+    previsao_label = le_alvo.inverse_transform(previsao)
+
+    # Mostrar o resultado
+    st.subheader(f"Previsão: {previsao_label[0]}")
+    st.write(f"Probabilidade de ter Câncer de Pele ('Yes'): {probabilidade[0]*100:.2f}%")
